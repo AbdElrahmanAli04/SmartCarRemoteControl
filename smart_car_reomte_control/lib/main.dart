@@ -19,8 +19,16 @@ class SmartCarApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       title: 'Smart Car Controller',
       theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.blueAccent),
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: const Color(0xFFED572C),
+          brightness: Brightness.dark,
+        ),
+        scaffoldBackgroundColor: const Color(0xFF111010),
         useMaterial3: true,
+        textTheme: const TextTheme(
+          bodyMedium: TextStyle(color: Color(0xFFFCF6F4)),
+          bodyLarge: TextStyle(color: Color(0xFFFCF6F4)),
+        ),
       ),
       home: const DashboardScreen(),
     );
@@ -37,14 +45,16 @@ class DashboardScreen extends StatefulWidget {
 class _DashboardScreenState extends State<DashboardScreen> {
   // Mock data for UI demonstration
   bool isConnected = false;
+  bool isRecording = false;
+  bool isAutonomous = false;
+  bool isParking = false;
+  bool isRepeating = false;
   int batteryLevel = 85;
   String currentMode = "Manual";
   double _speed = 50.0;
 
   final List<String> _modes = [
     "Manual",
-    "Autonomous",
-    "Auto Parking",
     "Teach and Repeat"
   ];
 
@@ -56,6 +66,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: const Color(0xFF111010),
       appBar: AppBar(
         title: const Text('Smart Car Remote Control'),
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
@@ -139,7 +150,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     children: [
                       _buildControlBtn(Icons.arrow_back, "L"),
                       const SizedBox(width: 10),
-                      _buildControlBtn(Icons.stop_circle, "S", color: Colors.red),
+                      const SizedBox(width: 78, height: 78),
                       const SizedBox(width: 10),
                       _buildControlBtn(Icons.arrow_forward, "R"),
                     ],
@@ -149,31 +160,129 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 ],
               ),
             ),
+
+
+            if (currentMode == "Manual")
+              Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: isAutonomous ? Colors.green : const Color(0xFFED572C),
+                      foregroundColor: const Color(0xFFFCF6F4),
+                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                    ),
+                    onPressed: () {
+                      setState(() {
+                        isAutonomous = !isAutonomous;
+                        if (isAutonomous) isParking = false;
+                      });
+                      _sendCommand(isAutonomous ? "AUTO_ON" : "AUTO_OFF");
+                    },
+                    child: const Text("Autonomous"),
+                  ),
+                  const SizedBox(height: 20),
+                  ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: isParking ? Colors.green : const Color(0xFFED572C),
+                      foregroundColor: const Color(0xFFFCF6F4),
+                      padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 12),
+                    ),
+                    onPressed: () {
+                      setState(() {
+                        isParking = !isParking;
+                        if (isParking) isAutonomous = false;
+                      });
+                      _sendCommand(isParking ? "PARK_ON" : "PARK_OFF");
+                    },
+                    child: const Text("Parking"),
+                  ),
+                ],
+              ),
+
+            if (currentMode == "Teach and Repeat")
+              Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFFED572C),
+                      foregroundColor: const Color(0xFFFCF6F4),
+                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                    ),
+                    onPressed: () {
+                      setState(() {
+                        isRecording = !isRecording;
+                      });
+                      _sendCommand(isRecording ? "REC_START" : "REC_STOP");
+                    },
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(isRecording ? "Stop" : "Teach"),
+                        const SizedBox(width: 10),
+                        Icon(
+                          isRecording ? Icons.pause : Icons.play_arrow,
+                          color: Colors.white,
+                          shadows: const [
+                            Shadow(
+                              blurRadius: 10.0,
+                              color: Colors.black,
+                              offset: Offset(2.0, 2.0),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: isRepeating ? Colors.green : const Color(0xFFED572C),
+                      foregroundColor: const Color(0xFFFCF6F4),
+                      padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 12),
+                    ),
+                    onPressed: () {
+                      setState(() {
+                        isRepeating = !isRepeating;
+                      });
+                      _sendCommand(isRepeating ? "REPEAT" : "REPEAT_STOP");
+                    },
+                    child: const Text("Repeat"),
+                  ),
+                ],
+              ),
         
             // 2. Speed Slider (Right)
             Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 const SizedBox(height: 10),
-                const Text("Speed", style: TextStyle(fontWeight: FontWeight.bold)),
+                const Text("Speed", style: TextStyle(fontWeight: FontWeight.bold , color: Color(0xffFcf6f4))),
                 Expanded(
                   child: RotatedBox(
                     quarterTurns: 3,
-                    child: Slider(
-                      value: _speed,
-                      min: 0,
-                      max: 100,
-                      divisions: 10,
-                      label: _speed.round().toString(),
-                      onChanged: (double value) {
-                        setState(() {
-                          _speed = value;
-                        });
-                      },
+                    child: SliderTheme(
+                      data: SliderTheme.of(context).copyWith(
+                        valueIndicatorColor: const Color(0xFFED572C),
+                        valueIndicatorTextStyle: const TextStyle(color: Color(0xFFFCF6F4)),
+                      ),
+                      child: Slider(
+                        value: _speed,
+                        min: 0,
+                        max: 100,
+                        divisions: 10,
+                        label: _speed.round().toString(),
+                        onChanged: (isParking || isRepeating) ? null : (double value) {
+                          setState(() {
+                            _speed = value;
+                          });
+                        },
+                      ),
                     ),
                   ),
                 ),
-                Text("${_speed.round()}%", style: const TextStyle(fontWeight: FontWeight.bold)),
+                Text("${_speed.round()}%", style: const TextStyle(fontWeight: FontWeight.bold , color: Color(0xffFcf6f4))),
                 const SizedBox(height: 20),
               ],
             ),
@@ -184,15 +293,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   Widget _buildControlBtn(IconData icon, String command, {Color? color}) {
+    final bool isDisabled = isParking || isAutonomous || isRepeating;
     return GestureDetector(
-      onTapDown: (_) => _sendCommand(command), // Send when pressed
-      onTapUp: (_) => _sendCommand("S"),       // Stop when released (optional safety)
+      onTapDown: isDisabled ? null : (_) => _sendCommand(command), // Send when pressed
+      onTapUp: isDisabled ? null : (_) => _sendCommand("S"),       // Stop when released (optional safety)
       child: Container(
         width: 70,
         height: 70,
         margin: const EdgeInsets.all(4),
         decoration: BoxDecoration(
-          color: color ?? Theme.of(context).colorScheme.primaryContainer,
+          color: isDisabled ? Colors.grey : (color ?? const Color(0xFFED572C)),
           shape: BoxShape.circle,
           boxShadow: const [BoxShadow(blurRadius: 5, color: Colors.black26)],
         ),

@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_bluetooth_serial/flutter_bluetooth_serial.dart';
+import 'bluetooth_service.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -43,6 +45,9 @@ class DashboardScreen extends StatefulWidget {
 }
 
 class _DashboardScreenState extends State<DashboardScreen> {
+  // Bluetooth service
+  final BluetoothService _bluetoothService = BluetoothService();
+  
   // Mock data for UI demonstration
   bool isConnected = false;
   bool isRecording = false;
@@ -52,16 +57,132 @@ class _DashboardScreenState extends State<DashboardScreen> {
   int batteryLevel = 85;
   String currentMode = "Manual";
   double _speed = 50.0;
+  String receivedData = "";
 
   final List<String> _modes = [
     "Manual",
     "Teach and Repeat"
   ];
 
+  @override
+  void initState() {
+    super.initState();
+    // Listen for incoming Bluetooth data
+    _bluetoothService.dataStream.listen((data) {
+      setState(() {
+        receivedData = data;
+        // Parse battery level if received (e.g., "BAT:85")
+        if (data.startsWith("BAT:")) {
+          batteryLevel = int.tryParse(data.substring(4)) ?? batteryLevel;
+        }
+      });
+    });
+  }
+
+  @override
+  void dispose() {
+    _bluetoothService.dispose();
+    super.dispose();
+  }
+
   void _sendCommand(String command) {
-    // TODO: Implement Bluetooth send logic here
+    _bluetoothService.sendCommand(command);
     print("Sending command: $command");
   }
+
+  // Show Bluetooth device selection dialog
+  Future<void> _showBluetoothDialog() async {
+    List<BluetoothDevice> devices = await _bluetoothService.getPairedDevices();
+    
+    if (!mounted) return;
+    
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('Select Bluetooth Device'),
+          content: SizedBox(
+            width: double.maxFinite,
+            child: devices.isEmpty
+                ? const Text('No paired devices found.\nPlease pair your HC-06 in Bluetooth settings first.')
+                : ListView.builder(
+                    shrinkWrap: true,
+                    itemCount: devices.length,
+                    itemBuilder: (context, index) {
+                      return ListTile(
+                        title: Text(devices[index].name ?? 'Unknown'),
+                        subtitle: Text(devices[index].address),
+                        onTap: () async {
+                          Navigator.pop(context);
+                          _connectToDevice(devices[index]);
+                        },
+                      );
+                    },
+                  ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  // Connect to selected device
+  Future<void> _connectToDevice(BluetoothDevice device) async {
+    // Show connecting dialog
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext context) {
+        return const AlertDialog(
+          content: Row(
+            children: [
+              CircularProgressIndicator(),
+              SizedBox(width: 20),
+              Text('Connecting...'),
+            ],
+          ),
+        );
+      },
+    );
+
+    bool connected = await _bluetoothService.connect(device);
+    
+    if (!mounted) return;
+    Navigator.pop(context); // Close connecting dialog
+
+    setState(() {
+      isConnected = connected;
+    });
+
+    if (connected) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Connected to ${device.name}')),
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Failed to connect')),
+      );
+    }
+  }
+
+  // Disconnect from device
+  Future<void> _disconnect() async {
+    await _bluetoothService.disconnect();
+    setState(() {
+      isConnected = false;
+    });
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Disconnected')),
+      );
+    }
+  }
+
 
   @override
   Widget build(BuildContext context) {
@@ -96,10 +217,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
               color: isConnected ? Colors.green : Colors.red,
             ),
             onPressed: () {
-              // TODO: Navigate to connection screen or toggle connection
-              setState(() {
-                isConnected = !isConnected;
-              });
+              if (isConnected) {
+                _disconnect();
+              } else {
+                _showBluetoothDialog();
+              }
             },
           )
         ],

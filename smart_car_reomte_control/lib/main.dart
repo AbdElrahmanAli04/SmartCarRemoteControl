@@ -67,6 +67,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
   @override
   void initState() {
     super.initState();
+    // Send initial Manual mode command and initial speed
+    Future.delayed(const Duration(milliseconds: 500), () {
+      _sendCommand("M");
+      final int initialSpeedLevel = (_speed ~/ 10).clamp(0, 9);
+      _sendCommand(initialSpeedLevel.toString());
+    });
     // Listen for incoming Bluetooth data
     _bluetoothService.dataStream.listen((data) {
       setState(() {
@@ -249,6 +255,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 setState(() {
                   currentMode = mode;
                 });
+                // Send mode command via Bluetooth
+                if (mode == "Manual") {
+                  _sendCommand("M");
+                }
                 Navigator.pop(context); // Close the drawer
               },
             )),
@@ -265,20 +275,20 @@ class _DashboardScreenState extends State<DashboardScreen> {
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  _buildControlBtn(Icons.arrow_upward, "F"),
+                  _buildControlBtn(Icons.arrow_upward, "f"),
                   const SizedBox(height: 10),
                   Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      _buildControlBtn(Icons.arrow_back, "L"),
+                      _buildControlBtn(Icons.arrow_back, "l"),
                       const SizedBox(width: 10),
                       const SizedBox(width: 78, height: 78),
                       const SizedBox(width: 10),
-                      _buildControlBtn(Icons.arrow_forward, "R"),
+                      _buildControlBtn(Icons.arrow_forward, "r"),
                     ],
                   ),
                   const SizedBox(height: 10),
-                  _buildControlBtn(Icons.arrow_downward, "B"),
+                  _buildControlBtn(Icons.arrow_downward, "b"),
                 ],
               ),
             ),
@@ -295,11 +305,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
                     ),
                     onPressed: () {
+                      final int speedLevel = (50 ~/ 10).clamp(0, 9); // Middle speed for Auto
+                      print("Autonomous pressed - Current speed level: $speedLevel");
                       setState(() {
                         isAutonomous = !isAutonomous;
                         if (isAutonomous) isParking = false;
                       });
-                      _sendCommand(isAutonomous ? "AUTO_ON" : "AUTO_OFF");
+                      _sendCommand(isAutonomous ? "A" : "S"); //Sends A if Autonmous and M if non 
                     },
                     child: const Text("Autonomous"),
                   ),
@@ -311,11 +323,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 12),
                     ),
                     onPressed: () {
+                      final int speedLevel = (30 ~/ 10).clamp(0, 9); // Fixed speed for parking 
+                      print("Parking pressed - Current speed level: $speedLevel");
                       setState(() {
                         isParking = !isParking;
                         if (isParking) isAutonomous = false;
                       });
-                      _sendCommand(isParking ? "PARK_ON" : "PARK_OFF");
+                      _sendCommand(isParking ? "P" : "S");
                     },
                     child: const Text("Parking"),
                   ),
@@ -333,10 +347,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
                     ),
                     onPressed: () {
+                      final int speedLevel = (_speed ~/ 10).clamp(0, 9);
+                      print("Teach pressed - Current speed level: $speedLevel");
                       setState(() {
                         isRecording = !isRecording;
                       });
-                      _sendCommand(isRecording ? "REC_START" : "REC_STOP");
+                      _sendCommand(isRecording ? "T" : "S");
                     },
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
@@ -365,46 +381,29 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 12),
                     ),
                     onPressed: () {
+                      final int speedLevel = (_speed ~/ 10).clamp(0, 9);
+                      print("Repeat pressed - Current speed level: $speedLevel");
                       setState(() {
                         isRepeating = !isRepeating;
                       });
-                      _sendCommand(isRepeating ? "REPEAT" : "REPEAT_STOP");
+                      _sendCommand(isRepeating ? "R" : "S");
                     },
                     child: const Text("Repeat"),
                   ),
                 ],
               ),
         
-            // 2. Speed Slider (Right)
+            // 2. Speed Mixer Control (Right)
             Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 const SizedBox(height: 10),
-                const Text("Speed", style: TextStyle(fontWeight: FontWeight.bold , color: Color(0xffFcf6f4))),
+                const Text("Speed", style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFFFCF6F4))),
+                const SizedBox(height: 10),
                 Expanded(
-                  child: RotatedBox(
-                    quarterTurns: 3,
-                    child: SliderTheme(
-                      data: SliderTheme.of(context).copyWith(
-                        valueIndicatorColor: const Color(0xFFED572C),
-                        valueIndicatorTextStyle: const TextStyle(color: Color(0xFFFCF6F4)),
-                      ),
-                      child: Slider(
-                        value: _speed,
-                        min: 0,
-                        max: 100,
-                        divisions: 10,
-                        label: _speed.round().toString(),
-                        onChanged: (isParking || isRepeating) ? null : (double value) {
-                          setState(() {
-                            _speed = value;
-                          });
-                        },
-                      ),
-                    ),
-                  ),
+                  child: _buildSpeedMixer(),
                 ),
-                Text("${_speed.round()}%", style: const TextStyle(fontWeight: FontWeight.bold , color: Color(0xffFcf6f4))),
+                Text("Level ${(_speed ~/ 10).clamp(0, 9)}", style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFFFCF6F4))),
                 const SizedBox(height: 20),
               ],
             ),
@@ -429,6 +428,80 @@ class _DashboardScreenState extends State<DashboardScreen> {
           boxShadow: const [BoxShadow(blurRadius: 5, color: Colors.black26)],
         ),
         child: Icon(icon, size: 32),
+      ),
+    );
+  }
+
+  // Mixer-style speed control widget
+  Widget _buildSpeedMixer() {
+    final bool isDisabled = isParking || isRepeating || isAutonomous ;
+    final int currentLevel = (_speed ~/ 10).clamp(0, 9);
+    
+    return Expanded(
+      child: Container(
+        width: 60,
+        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+        decoration: BoxDecoration(
+          color: const Color(0xFF1A1A1A),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: const Color(0xFF333333), width: 2),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.5),
+              blurRadius: 10,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+          children: List.generate(10, (index) {
+            final int level = 9 - index; // Reverse so 9 is at top, 0 at bottom
+            final bool isActive = level <= currentLevel;
+            final bool isCurrentLevel = level == currentLevel;
+            
+            // Color gradient from green (low) to yellow (mid) to red (high)
+            Color getBarColor() {
+              if (!isActive) return const Color(0xFF2A2A2A);
+              if (isDisabled) return Colors.grey;
+              if (level <= 3) return Colors.green;
+              if (level <= 6) return Colors.orange;
+              return Colors.red;
+            }
+            
+            return GestureDetector(
+              onTap: isDisabled ? null : () {
+                setState(() {
+                  _speed = level * 10.0;
+                });
+                // Send level 0-9 to Arduino
+                _sendCommand(level.toString());
+              },
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 150),
+                width: double.infinity,
+                height: 14,
+                margin: const EdgeInsets.symmetric(vertical: 2),
+                decoration: BoxDecoration(
+                  color: getBarColor(),
+                  borderRadius: BorderRadius.circular(4),
+                  border: isCurrentLevel
+                      ? Border.all(color: const Color(0xFFFCF6F4), width: 2)
+                      : null,
+                  boxShadow: isActive && !isDisabled
+                      ? [
+                          BoxShadow(
+                            color: getBarColor().withOpacity(0.6),
+                            blurRadius: 8,
+                            spreadRadius: 1,
+                          ),
+                        ]
+                      : null,
+                ),
+              ),
+            );
+          }),
+        ),
       ),
     );
   }

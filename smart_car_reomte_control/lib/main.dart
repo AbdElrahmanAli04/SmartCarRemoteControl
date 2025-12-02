@@ -54,7 +54,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   bool isAutonomous = false;
   bool isParking = false;
   bool isRepeating = false;
-  int batteryLevel = 85;
+  double batteryLevel = 100;
   String currentMode = "Manual";
   double _speed = 50.0;
   String receivedData = "";
@@ -77,9 +77,18 @@ class _DashboardScreenState extends State<DashboardScreen> {
     _bluetoothService.dataStream.listen((data) {
       setState(() {
         receivedData = data;
-        // Parse battery level if received (e.g., "BAT:85")
-        if (data.startsWith("BAT:")) {
-          batteryLevel = int.tryParse(data.substring(4)) ?? batteryLevel;
+        // Parse battery level if received (e.g., "V085V" = 8.5V, "V105V" = 10.5V)
+        if (data.startsWith("V") && data.endsWith("V") && data.length == 5) {
+          final parsed = int.tryParse(data.substring(1, 4));
+          if (parsed != null && parsed >= 0 && parsed <= 121) { // Max volt is 12.1V = 121
+            // Convert to voltage: 085 -> 8.5V, 105 -> 10.5V
+            final double voltage = parsed / 10.0;
+            // Convert voltage to percentage (0-100%)
+            // Assuming min voltage is ~7V (empty) and max is 12.1V (full)
+            const double minVoltage = 7.0;
+            const double maxVoltage = 12.1;
+            batteryLevel = ((voltage - minVoltage) / (maxVoltage - minVoltage) * 100).clamp(0, 100);
+          }
         }
       });
     });
@@ -211,8 +220,15 @@ class _DashboardScreenState extends State<DashboardScreen> {
             padding: const EdgeInsets.symmetric(horizontal: 8.0),
             child: Row(
               children: [
-                const Icon(Icons.battery_std),
-                Text("$batteryLevel%", style: const TextStyle(fontWeight: FontWeight.bold)),
+                Icon(
+                  batteryLevel > 75 ? Icons.battery_full :
+                  batteryLevel > 50 ? Icons.battery_5_bar :
+                  batteryLevel > 25 ? Icons.battery_3_bar :
+                  Icons.battery_1_bar,
+                  color: batteryLevel > 75 ? Colors.green :  batteryLevel > 25 ? Colors.orange :  Colors.red,
+                ),
+                Text("${batteryLevel.toStringAsFixed(0)}%", 
+                  style: const TextStyle(fontWeight: FontWeight.bold)),
               ],
             ),
           ),
@@ -415,20 +431,85 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   Widget _buildControlBtn(IconData icon, String command, {Color? color}) {
     final bool isDisabled = isParking || isAutonomous || isRepeating;
-    return GestureDetector(
-      onTapDown: isDisabled ? null : (_) => _sendCommand(command), // Send when pressed
-      onTapUp: isDisabled ? null : (_) => _sendCommand("S"),       // Stop when released (optional safety)
-      child: Container(
-        width: 70,
-        height: 70,
-        margin: const EdgeInsets.all(4),
-        decoration: BoxDecoration(
-          color: isDisabled ? Colors.grey : (color ?? const Color(0xFFED572C)),
-          shape: BoxShape.circle,
-          boxShadow: const [BoxShadow(blurRadius: 5, color: Colors.black26)],
-        ),
-        child: Icon(icon, size: 32),
-      ),
+    
+    return StatefulBuilder(
+      builder: (context, setLocalState) {
+        bool isPressed = false;
+        
+        return GestureDetector(
+          onTapDown: isDisabled ? null : (_) {
+            setLocalState(() => isPressed = true);
+            _sendCommand(command);
+          },
+          onTapUp: isDisabled ? null : (_) {
+            setLocalState(() => isPressed = false);
+            _sendCommand("S");
+          },
+          onTapCancel: isDisabled ? null : () {
+            setLocalState(() => isPressed = false);
+            _sendCommand("S");
+          },
+          child: AnimatedScale(
+            scale: isPressed ? 0.92 : 1.0,
+            duration: const Duration(milliseconds: 100),
+            curve: Curves.easeOutBack,
+            child: Container(
+              width: 70,
+              height: 70,
+              margin: const EdgeInsets.all(4),
+              decoration: BoxDecoration(
+                gradient: isDisabled
+                    ? LinearGradient(
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                        colors: [Colors.grey.shade600, Colors.grey.shade700],
+                      )
+                    : isPressed
+                        ? const LinearGradient(
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                            colors: [Color(0xFFFF7043), Color(0xFFBF360C)],
+                          )
+                        : LinearGradient(
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                            colors: [
+                              color ?? const Color(0xFFED572C),
+                              color?.withOpacity(0.7) ?? const Color(0xFFD84315),
+                            ],
+                          ),
+                shape: BoxShape.circle,
+                boxShadow: [
+                  BoxShadow(
+                    blurRadius: isPressed ? 2 : 8,
+                    color: Colors.black.withOpacity(0.4),
+                    offset: Offset(0, isPressed ? 1 : 4),
+                  ),
+                ],
+              ),
+              child: Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(35),
+                  splashColor: Colors.white.withOpacity(0.3),
+                  highlightColor: Colors.white.withOpacity(0.1),
+                  onTap: () {}, // Handled by GestureDetector
+                  child: Center(
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 100),
+                      child: Icon(
+                        icon,
+                        size: 32,
+                        color: isPressed ? Colors.white : const Color(0xFFFCF6F4),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 

@@ -7,10 +7,17 @@ import 'package:permission_handler/permission_handler.dart';
 class BluetoothService {
   BluetoothConnection? _connection;
   bool _isConnected = false;
-  
-  final StreamController<String> _dataStreamController = StreamController<String>.broadcast();
+  String _buffer = ''; // Buffer to accumulate incoming data
+
+  final StreamController<String> _dataStreamController =
+      StreamController<String>.broadcast();
   Stream<String> get dataStream => _dataStreamController.stream;
-  
+
+  // Connection state stream to notify UI when connection is lost
+  final StreamController<bool> _connectionStateController =
+      StreamController<bool>.broadcast();
+  Stream<bool> get connectionStateStream => _connectionStateController.stream;
+
   bool get isConnected => _isConnected;
 
   // Request Bluetooth permissions
@@ -28,7 +35,7 @@ class BluetoothService {
     }
     return allGranted;
   }
-  
+
   // Get list of paired devices
   Future<List<BluetoothDevice>> getPairedDevices() async {
     // Request permissions first
@@ -46,23 +53,42 @@ class BluetoothService {
     }
     return devices;
   }
-  
+
   // Connect to HC-06 device
   Future<bool> connect(BluetoothDevice device) async {
     try {
       _connection = await BluetoothConnection.toAddress(device.address);
       _isConnected = true;
-      
+      _buffer = ''; // Clear buffer on new connection
+
       // Listen for incoming data
-      _connection!.input!.listen((Uint8List data) {
-        String receivedData = ascii.decode(data);
-        _dataStreamController.add(receivedData);
-        print("Received: $receivedData");
-      }).onDone(() {
-        _isConnected = false;
-        print("Disconnected by remote device");
-      });
-      
+      _connection!.input!
+          .listen((Uint8List data) {
+            // Log raw bytes for debugging
+            print("Raw bytes received: $data");
+
+            // Append received data to buffer
+            _buffer += ascii.decode(data);
+            print("Current buffer: $_buffer");
+
+            // Check if buffer contains complete message(s) ending with newline
+            while (_buffer.contains('\n')) {
+              int newlineIndex = _buffer.indexOf('\n');
+              String completeMessage = _buffer.substring(0, newlineIndex);
+              _buffer = _buffer.substring(newlineIndex + 1);
+
+              // Send complete message to stream
+              _dataStreamController.add(completeMessage);
+              print("Received complete message: $completeMessage");
+            }
+          })
+          .onDone(() {
+            _isConnected = false;
+            _buffer = '';
+            _connectionStateController.add(false); // Notify UI of disconnection
+            print("Disconnected by remote device");
+          });
+
       print("Connected to ${device.name}");
       return true;
     } catch (e) {
@@ -71,7 +97,7 @@ class BluetoothService {
       return false;
     }
   }
-  
+
   // Disconnect from device
   Future<void> disconnect() async {
     try {
@@ -82,10 +108,10 @@ class BluetoothService {
       print("Error disconnecting: $e");
     }
   }
-  
+
   // Send command to HC-06
   void sendCommand(String command) {
-    if (_connection != null && _isConnected) {
+    if ( _isConnected ) {
       try {
         _connection!.output.add(Uint8List.fromList(utf8.encode(command)));
         _connection!.output.allSent;
@@ -97,10 +123,11 @@ class BluetoothService {
       print("Not connected. Cannot send command.");
     }
   }
-  
+
   // Dispose resources
   void dispose() {
     _dataStreamController.close();
+    _connectionStateController.close();
     disconnect();
   }
 }
